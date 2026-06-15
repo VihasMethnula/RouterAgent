@@ -48,6 +48,21 @@ fn format_speed(bytes_per_sec: f64) -> String {
     }
 }
 
+fn get_ping_latency() -> String {
+    let start = Instant::now();
+    let result = std::process::Command::new("ping")
+        .args(["-c", "1", "-W", "2", "8.8.8.8"])
+        .output();
+
+    match result {
+        Ok(output) if output.status.success() => {
+            let elapsed = start.elapsed().as_millis();
+            format!("{} ms", elapsed)
+        }
+        _ => "Timeout".into(),
+    }
+}
+
 fn get_hermes_stats() -> Stats {
     let offline = Stats {
         status:         "OFFLINE (Check Wi-Fi Connection)".into(),
@@ -119,12 +134,13 @@ fn get_hermes_stats() -> Stats {
     }
 }
 
-fn render_dashboard(d: &Stats, upload_speed: &str, download_speed: &str) {
+fn render_dashboard(d: &Stats, upload_speed: &str, download_speed: &str, latency: &str) {
     clear_terminal();
     println!();
     println!("  Router Agent");
     println!();
     println!("  System Status   : {}", d.status);
+    println!("  Internet Ping   : {}", latency);
     println!("  Signal (RSSI)   : {}", d.rssi);
     println!("  Active Clients  : {} device(s) connected", d.clients);
     println!("  Router Uptime   : {}", d.uptime);
@@ -153,7 +169,8 @@ fn main() {
             (format_speed(up), format_speed(down))
         };
 
-        render_dashboard(&stats, &upload_speed, &download_speed);
+        let latency = get_ping_latency();
+        render_dashboard(&stats, &upload_speed, &download_speed, &latency);
 
         prev_sent     = stats.sent_bytes;
         prev_received = stats.received_bytes;
