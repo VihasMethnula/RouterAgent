@@ -48,19 +48,71 @@ fn format_speed(bytes_per_sec: f64) -> String {
     }
 }
 
-fn get_ping_latency() -> String {
+struct PingResult {
+    name:    String,
+    host:    String,
+    latency: String,
+}
+
+fn get_default_gateway() -> Option<String> {
+    let output = std::process::Command::new("sh")
+        .args(["-c", "ip route show default | awk '{print $3}'"])
+        .output().ok()?;
+    let gw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if gw.is_empty() { None } else { Some(gw) }
+}
+
+fn ping_host(host: &str) -> Option<u128> {
     let start = Instant::now();
     let result = std::process::Command::new("ping")
-        .args(["-c", "1", "-W", "2", "8.8.8.8"])
+        .args(["-c", "1", "-W", "2", host])
         .output();
-
     match result {
-        Ok(output) if output.status.success() => {
-            let elapsed = start.elapsed().as_millis();
-            format!("{} ms", elapsed)
-        }
-        _ => "Timeout".into(),
+        Ok(out) if out.status.success() => Some(start.elapsed().as_millis()),
+        _ => None,
     }
+}
+
+fn get_ping_results() -> Vec<PingResult> {
+    let targets = [("Internet", "8.8.8.8"), ("DNS 1", "1.1.1.1")];
+    let gateway = get_default_gateway();
+
+    std::thread::scope(|s| {
+        let mut handles: Vec<_> = targets
+            .iter()
+            .map(|&(name, host)| {
+                s.spawn(|| {
+                    let ms = ping_host(host);
+                    PingResult {
+                        name: name.to_string(),
+                        host: host.to_string(),
+                        latency: ms.map(|m| format!("{} ms", m)).unwrap_or("Timeout".into()),
+                    }
+                })
+            })
+            .collect();
+
+        let gw_handle = gateway.as_ref().map(|gw| {
+            let gw = gw.clone();
+            s.spawn(move || {
+                let ms = ping_host(&gw);
+                PingResult {
+                    name: "Gateway".into(),
+                    host: gw,
+                    latency: ms.map(|m| format!("{} ms", m)).unwrap_or("Timeout".into()),
+                }
+            })
+        });
+
+        let mut results: Vec<PingResult> =
+            handles.drain(..).map(|h| h.join().unwrap()).collect();
+
+        if let Some(h) = gw_handle {
+            results.push(h.join().unwrap());
+        }
+
+        results
+    })
 }
 
 fn get_hermes_stats() -> Stats {
@@ -134,16 +186,19 @@ fn get_hermes_stats() -> Stats {
     }
 }
 
-fn render_dashboard(d: &Stats, upload_speed: &str, download_speed: &str, latency: &str) {
+fn render_dashboard(d: &Stats, upload_speed: &str, download_speed: &str, pings: &[PingResult]) {
     clear_terminal();
     println!();
     println!("  Router Agent");
     println!();
     println!("  System Status   : {}", d.status);
-    println!("  Internet Ping   : {}", latency);
     println!("  Signal (RSSI)   : {}", d.rssi);
     println!("  Active Clients  : {} device(s) connected", d.clients);
     println!("  Router Uptime   : {}", d.uptime);
+    println!(" ");
+    for p in pings {
+        println!("  {:<10} : {}  ({})", p.name, p.latency, p.host);
+    }
     println!();
     println!("  Data Uploaded   : {}  ↑ {}", d.sent, upload_speed);
     println!("  Data Downloaded : {}  ↓ {}", d.received, download_speed);
@@ -169,8 +224,8 @@ fn main() {
             (format_speed(up), format_speed(down))
         };
 
-        let latency = get_ping_latency();
-        render_dashboard(&stats, &upload_speed, &download_speed, &latency);
+        let pings = get_ping_results();
+        render_dashboard(&stats, &upload_speed, &download_speed, &pings);
 
         prev_sent     = stats.sent_bytes;
         prev_received = stats.received_bytes;
