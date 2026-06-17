@@ -1,24 +1,49 @@
-use std::{thread, time::{Duration, Instant}};
+use std::{
+    io::{self, Read},
+    sync::{Arc, Mutex},
+    thread,
+    time::{Duration, Instant},
+};
 use regex::Regex;
 
 const ROUTER_URL: &str = "http://192.168.4.1";
+const NETWORK:    &str = "192.168.4.0/24";
 
+// ── Device found by nmap ─────────────────────────────────────────────────────
+#[derive(Clone)]
+struct Device {
+    ip:       String,
+    hostname: String,
+    mac:      String,
+}
+
+// ── Router stats ─────────────────────────────────────────────────────────────
 struct Stats {
-    status:   String,
-    clients:  String,
-    rssi:     String,
-    uptime:   String,
-    sent:     String,
-    received: String,
+    status:         String,
+    clients:        String,
+    rssi:           String,
+    uptime:         String,
+    sent:           String,
+    received:       String,
     sent_bytes:     f64,
     received_bytes: f64,
 }
 
+// ── Terminal helpers ──────────────────────────────────────────────────────────
 fn clear_terminal() {
     std::process::Command::new("clear").status().ok();
 }
 
-// Parse "6.8 MB", "150.0 MB", "1.2 GB", "512 KB" etc. into bytes as f64
+// Put terminal in raw mode so we can read single keypresses without Enter
+fn set_raw_mode(raw: bool) {
+    if raw {
+        std::process::Command::new("stty").args(["-echo", "cbreak"]).status().ok();
+    } else {
+        std::process::Command::new("stty").args(["echo", "-cbreak"]).status().ok();
+    }
+}
+
+// ── Byte parsing / formatting ─────────────────────────────────────────────────
 fn parse_bytes(s: &str) -> f64 {
     let s = s.trim().to_lowercase();
     let parts: Vec<&str> = s.splitn(2, ' ').collect();
@@ -33,98 +58,93 @@ fn parse_bytes(s: &str) -> f64 {
     }
 }
 
-fn format_speed(bytes_per_sec: f64) -> String {
-    if bytes_per_sec < 0.0 {
-        return "0 B/s".into(); // reset or counter wrap
-    }
-    if bytes_per_sec >= 1_073_741_824.0 {
-        format!("{:.1} GB/s", bytes_per_sec / 1_073_741_824.0)
-    } else if bytes_per_sec >= 1_048_576.0 {
-        format!("{:.1} MB/s", bytes_per_sec / 1_048_576.0)
-    } else if bytes_per_sec >= 1_024.0 {
-        format!("{:.1} KB/s", bytes_per_sec / 1_024.0)
-    } else {
-        format!("{:.0} B/s", bytes_per_sec)
-    }
+fn format_speed(bps: f64) -> String {
+    if bps < 0.0                { return "0 B/s".into(); }
+    if bps >= 1_073_741_824.0  { return format!("{:.1} GB/s", bps / 1_073_741_824.0); }
+    if bps >= 1_048_576.0      { return format!("{:.1} MB/s", bps / 1_048_576.0); }
+    if bps >= 1_024.0          { return format!("{:.1} KB/s", bps / 1_024.0); }
+    format!("{:.0} B/s", bps)
 }
 
-struct PingResult {
-    name:    String,
-    host:    String,
-    latency: String,
-}
-
-fn get_default_gateway() -> Option<String> {
-    let output = std::process::Command::new("sh")
-        .args(["-c", "ip route show default | awk '{print $3}'"])
-        .output().ok()?;
-    let gw = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if gw.is_empty() { None } else { Some(gw) }
-}
-
-fn ping_host(host: &str) -> Option<u128> {
+// ── Ping ──────────────────────────────────────────────────────────────────────
+fn get_ping_latency() -> String {
     let start = Instant::now();
-    let result = std::process::Command::new("ping")
-        .args(["-c", "1", "-W", "2", host])
+    let ok = std::process::Command::new("ping")
+        .args(["-c", "1", "-W", "2", "8.8.8.8"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if ok { format!("{} ms", start.elapsed().as_millis()) } else { "Timeout".into() }
+}
+
+// ── nmap scan ─────────────────────────────────────────────────────────────────
+fn run_nmap_scan() -> Vec<Device> {
+    let output = std::process::Command::new("sudo")
+        .args(["nmap", "-sn", NETWORK])
         .output();
-    match result {
-        Ok(out) if out.status.success() => Some(start.elapsed().as_millis()),
-        _ => None,
-    }
-}
 
-fn get_ping_results() -> Vec<PingResult> {
-    let targets = [("Internet", "8.8.8.8"), ("DNS 1", "1.1.1.1")];
-    let gateway = get_default_gateway();
+    let text = match output {
+        Ok(o) => String::from_utf8_lossy(&o.stdout).to_string(),
+        Err(_) => return vec![],
+    };
 
-    std::thread::scope(|s| {
-        let mut handles: Vec<_> = targets
-            .iter()
-            .map(|&(name, host)| {
-                s.spawn(|| {
-                    let ms = ping_host(host);
-                    PingResult {
-                        name: name.to_string(),
-                        host: host.to_string(),
-                        latency: ms.map(|m| format!("{} ms", m)).unwrap_or("Timeout".into()),
-                    }
-                })
-            })
-            .collect();
+    let mut devices = Vec::new();
+    let mut current_host = String::new();
+    let mut current_mac  = String::new();
 
-        let gw_handle = gateway.as_ref().map(|gw| {
-            let gw = gw.clone();
-            s.spawn(move || {
-                let ms = ping_host(&gw);
-                PingResult {
-                    name: "Gateway".into(),
-                    host: gw,
-                    latency: ms.map(|m| format!("{} ms", m)).unwrap_or("Timeout".into()),
-                }
-            })
-        });
+    // Regex patterns matching your nmap output format
+    let re_host = Regex::new(r"Nmap scan report for (.+?) \((\d+\.\d+\.\d+\.\d+)\)|Nmap scan report for (\d+\.\d+\.\d+\.\d+)").unwrap();
+    let re_mac  = Regex::new(r"MAC Address: ([0-9A-F:]{17})").unwrap();
 
-        let mut results: Vec<PingResult> =
-            handles.drain(..).map(|h| h.join().unwrap()).collect();
-
-        if let Some(h) = gw_handle {
-            results.push(h.join().unwrap());
+    for line in text.lines() {
+        if let Some(cap) = re_host.captures(line) {
+            // Push previous device if any
+            if !current_host.is_empty() {
+                let parts: Vec<&str> = current_host.splitn(2, '|').collect();
+                devices.push(Device {
+                    hostname: parts.get(0).unwrap_or(&"").to_string(),
+                    ip:       parts.get(1).unwrap_or(&"").to_string(),
+                    mac:      current_mac.clone(),
+                });
+                current_mac.clear();
+            }
+            if cap.get(1).is_some() {
+                // "hostname (ip)" format
+                current_host = format!("{}|{}", cap[1].trim(), cap[2].trim());
+            } else {
+                // bare IP format
+                current_host = format!("{}|{}", cap[3].trim(), cap[3].trim());
+            }
+        } else if let Some(cap) = re_mac.captures(line) {
+            current_mac = cap[1].to_string();
         }
+    }
+    // Push last device
+    if !current_host.is_empty() {
+        let parts: Vec<&str> = current_host.splitn(2, '|').collect();
+        devices.push(Device {
+            hostname: parts.get(0).unwrap_or(&"").to_string(),
+            ip:       parts.get(1).unwrap_or(&"").to_string(),
+            mac:      current_mac,
+        });
+    }
+    // Rename _gateway to Router
+    for dev in &mut devices {
+        if dev.hostname == "_gateway" {
+            dev.hostname = "Router".into();
+        }
+    }
 
-        results
-    })
+    devices
 }
 
+// ── Router stats scrape ───────────────────────────────────────────────────────
 fn get_hermes_stats() -> Stats {
     let offline = Stats {
-        status:         "OFFLINE (Check Wi-Fi Connection)".into(),
-        clients:        "0".into(),
-        rssi:           "N/A".into(),
-        uptime:         "N/A".into(),
-        sent:           "N/A".into(),
-        received:       "N/A".into(),
-        sent_bytes:     0.0,
-        received_bytes: 0.0,
+        status: "OFFLINE (Check Wi-Fi Connection)".into(),
+        clients: "0".into(), rssi: "N/A".into(), uptime: "N/A".into(),
+        sent: "N/A".into(), received: "N/A".into(),
+        sent_bytes: 0.0, received_bytes: 0.0,
     };
 
     let body = match reqwest::blocking::Client::builder()
@@ -139,31 +159,16 @@ fn get_hermes_stats() -> Stats {
 
     let plain = Regex::new(r"<[^>]+>").unwrap().replace_all(&body, " ").to_string();
 
-    // 1. AP Clients
-    let clients = Regex::new(r"(?i)AP\s+Clients:\s*(\d+)")
-        .unwrap()
-        .captures(&plain)
-        .map(|c| c[1].to_string())
-        .unwrap_or_else(|| "0".into());
+    let clients = Regex::new(r"(?i)AP\s+Clients:\s*(\d+)").unwrap()
+        .captures(&plain).map(|c| c[1].to_string()).unwrap_or_else(|| "0".into());
 
-    // 2. RSSI / Signal
-    let rssi = Regex::new(r"(-\d+)\s*dBm")
-        .unwrap()
-        .captures(&plain)
-        .map(|c| format!("{} dBm", &c[1]))
-        .unwrap_or_else(|| "N/A".into());
+    let rssi = Regex::new(r"(-\d+)\s*dBm").unwrap()
+        .captures(&plain).map(|c| format!("{} dBm", &c[1])).unwrap_or_else(|| "N/A".into());
 
-    // 3. Uptime
-    let uptime = Regex::new(r"Uptime:\s*([\d:]+(?:\s+\([^)]+\))?)")
-        .unwrap()
-        .captures(&plain)
-        .map(|c| c[1].trim().to_string())
-        .unwrap_or_else(|| "N/A".into());
+    let uptime = Regex::new(r"Uptime:\s*([\d:]+(?:\s+\([^)]+\))?)").unwrap()
+        .captures(&plain).map(|c| c[1].trim().to_string()).unwrap_or_else(|| "N/A".into());
 
-    // 4. Bandwidth totals
-    let bw = Regex::new(r"(?i)(\d+(?:\.\d+)?\s*\w+)\s+sent\s*/\s*(\d+(?:\.\d+)?\s*\w+)\s+received")
-        .unwrap();
-
+    let bw = Regex::new(r"(?i)(\d+(?:\.\d+)?\s*\w+)\s+sent\s*/\s*(\d+(?:\.\d+)?\s*\w+)\s+received").unwrap();
     let (sent, received, sent_bytes, received_bytes) = bw.captures(&plain)
         .map(|c| {
             let s = c[1].trim().to_string();
@@ -174,49 +179,103 @@ fn get_hermes_stats() -> Stats {
         })
         .unwrap_or_else(|| ("0 MB".into(), "0 MB".into(), 0.0, 0.0));
 
-    Stats {
-        status: "ONLINE".into(),
-        clients,
-        rssi,
-        uptime,
-        sent,
-        received,
-        sent_bytes,
-        received_bytes,
-    }
+    Stats { status: "ONLINE".into(), clients, rssi, uptime, sent, received, sent_bytes, received_bytes }
 }
 
-fn render_dashboard(d: &Stats, upload_speed: &str, download_speed: &str, pings: &[PingResult]) {
+// ── Render ────────────────────────────────────────────────────────────────────
+fn render(
+    d: &Stats,
+    upload: &str,
+    download: &str,
+    latency: &str,
+    scan_open: bool,
+    devices: &[Device],
+    scanning: bool,
+) {
     clear_terminal();
     println!();
     println!("  Router Agent");
     println!();
     println!("  System Status   : {}", d.status);
+    println!("  Internet Ping   : {}", latency);
     println!("  Signal (RSSI)   : {}", d.rssi);
     println!("  Active Clients  : {} device(s) connected", d.clients);
     println!("  Router Uptime   : {}", d.uptime);
-    println!(" ");
-    for p in pings {
-        println!("  {:<10} : {}  ({})", p.name, p.latency, p.host);
+    println!();
+    println!("  Data Uploaded   : {}  ↑ {}", d.sent, upload);
+    println!("  Data Downloaded : {}  ↓ {}", d.received, download);
+    println!();
+    println!("  [s] Network Scan");
+    println!();
+
+    if scan_open {
+        println!("  ── Network Devices ────────────────────────────────");
+        if scanning {
+            println!("  Scanning... (this takes ~3 seconds)");
+        } else if devices.is_empty() {
+            println!("  No devices found.");
+        } else {
+            for dev in devices {
+                let mac_str = if dev.mac.is_empty() { "           (this device)".into() }
+                              else { format!("  {}", dev.mac) };
+                println!("  {:<16}  {:<20}{}", dev.ip, dev.hostname, mac_str);
+            }
+        }
+        println!("  ───────────────────────────────────────────────────");
+        println!();
     }
-    println!();
-    println!("  Data Uploaded   : {}  ↑ {}", d.sent, upload_speed);
-    println!("  Data Downloaded : {}  ↓ {}", d.received, download_speed);
-    println!();
 }
 
+// ── Main ──────────────────────────────────────────────────────────────────────
 fn main() {
+    set_raw_mode(true);
+
+    // Shared state between main loop and keyboard thread
+    let scan_open: Arc<Mutex<bool>>      = Arc::new(Mutex::new(false));
+    let scanning:  Arc<Mutex<bool>>      = Arc::new(Mutex::new(false));
+    let devices:   Arc<Mutex<Vec<Device>>> = Arc::new(Mutex::new(vec![]));
+
+    // Keyboard listener thread
+    let scan_open_kb = Arc::clone(&scan_open);
+    let scanning_kb  = Arc::clone(&scanning);
+    let devices_kb   = Arc::clone(&devices);
+
+    thread::spawn(move || {
+        let stdin = io::stdin();
+        let mut buf = [0u8; 1];
+        loop {
+            if stdin.lock().read(&mut buf).is_ok() {
+                if buf[0] == b's' || buf[0] == b'S' {
+                    let mut open = scan_open_kb.lock().unwrap();
+                    *open = !*open;
+                    if *open {
+                        // Start scan in background
+                        let scanning2 = Arc::clone(&scanning_kb);
+                        let devices2  = Arc::clone(&devices_kb);
+                        *scanning_kb.lock().unwrap() = true;
+                        thread::spawn(move || {
+                            let found = run_nmap_scan();
+                            *devices2.lock().unwrap()  = found;
+                            *scanning2.lock().unwrap() = false;
+                        });
+                    }
+                }
+            }
+        }
+    });
+
     let mut prev_sent:     f64 = 0.0;
     let mut prev_received: f64 = 0.0;
     let mut prev_time = Instant::now();
     let mut first = true;
 
     loop {
-        let stats = get_hermes_stats();
-        let now = Instant::now();
+        let stats   = get_hermes_stats();
+        let latency = get_ping_latency();
+        let now     = Instant::now();
         let elapsed = now.duration_since(prev_time).as_secs_f64();
 
-        let (upload_speed, download_speed) = if first || elapsed == 0.0 {
+        let (upload, download) = if first || elapsed == 0.0 {
             ("-- KB/s".into(), "-- KB/s".into())
         } else {
             let up   = (stats.sent_bytes     - prev_sent)     / elapsed;
@@ -224,8 +283,12 @@ fn main() {
             (format_speed(up), format_speed(down))
         };
 
-        let pings = get_ping_results();
-        render_dashboard(&stats, &upload_speed, &download_speed, &pings);
+        {
+            let open     = *scan_open.lock().unwrap();
+            let scanning = *scanning.lock().unwrap();
+            let devs     = devices.lock().unwrap().clone();
+            render(&stats, &upload, &download, &latency, open, &devs, scanning);
+        }
 
         prev_sent     = stats.sent_bytes;
         prev_received = stats.received_bytes;
