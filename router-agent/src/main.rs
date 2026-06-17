@@ -128,10 +128,13 @@ fn run_nmap_scan() -> Vec<Device> {
             mac:      current_mac,
         });
     }
-    // Rename _gateway to Router
+    // Rename known devices
     for dev in &mut devices {
-        if dev.hostname == "_gateway" {
-            dev.hostname = "Router".into();
+        match dev.hostname.as_str() {
+            "_gateway"    => dev.hostname = "Router".into(),
+            "192.168.4.1" => dev.hostname = "Router".into(),
+            "192.168.4.2" => dev.hostname = "Methnula".into(),
+            _             => {}
         }
     }
 
