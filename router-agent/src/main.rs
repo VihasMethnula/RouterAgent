@@ -209,19 +209,19 @@ fn render(
     println!();
 
     if scan_open {
-        println!("  ── Network Devices ────────────────────────────────");
+        println!("  ── Network Devices ───────────────────────────────────");
         if scanning {
             println!("  Scanning... (this takes ~3 seconds)");
         } else if devices.is_empty() {
             println!("  No devices found.");
         } else {
             for dev in devices {
-                let mac_str = if dev.mac.is_empty() { "           (this device)".into() }
+                let mac_str = if dev.mac.is_empty() { "  (this device)".into() }
                               else { format!("  {}", dev.mac) };
                 println!("  {:<16}  {:<20}{}", dev.ip, dev.hostname, mac_str);
             }
         }
-        println!("  ───────────────────────────────────────────────────");
+        println!("  ──────────────────────────────────────────────────────");
         println!();
     }
 }
