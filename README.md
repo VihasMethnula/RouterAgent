@@ -54,14 +54,10 @@ Router
 ```
 
 Once running:
-<<<<<<< HEAD
-- The dashboard updates automatically every 500ms
+
+- The dashboard updates automatically every 2s
 - Press `s` to toggle the network scan panel and list devices on the network
 - Press `q` to quit cleanly
-=======
-- The dashboard updates automatically every 2 seconds
-- Press `s` to toggle the network scan panel and list devices on the network
->>>>>>> upstream/main
 
 ## Credits
 
