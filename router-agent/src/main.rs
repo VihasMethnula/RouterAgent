@@ -9,6 +9,123 @@ use regex::Regex;
 const ROUTER_URL: &str = "http://192.168.4.1";
 const NETWORK:    &str = "192.168.4.0/24";
 
+// ── ASCII Art (edit this to customize) ────────────────────────────────────────
+const ASCII_ART: &str = r#"
+▗▄▄▖  ▗▄▖ ▗▖ ▗▖▗▄▄▄▖▗▄▄▄▖▗▄▄▖      ▗▄▖  ▗▄▄▖▗▄▄▄▖▗▖  ▗▖▗▄▄▄▖
+▐▌ ▐▌▐▌ ▐▌▐▌ ▐▌  █  ▐▌   ▐▌ ▐▌    ▐▌ ▐▌▐▌   ▐▌   ▐▛▚▖▐▌  █  
+▐▛▀▚▖▐▌ ▐▌▐▌ ▐▌  █  ▐▛▀▀▘▐▛▀▚▖    ▐▛▀▜▌▐▌▝▜▌▐▛▀▀▘▐▌ ▝▜▌  █  
+▐▌ ▐▌▝▚▄▞▘▝▚▄▞▘  █  ▐▙▄▄▖▐▌ ▐▌    ▐▌ ▐▌▝▚▄▞▘▐▙▄▄▖▐▌  ▐▌  █  
+              By Vihas Methnula :)                                                            
+"#;
+
+// ── ANSI Colors ───────────────────────────────────────────────────────────────
+const RESET:   &str = "\x1b[0m";
+const BOLD:    &str = "\x1b[1m";
+const DIM:     &str = "\x1b[2m";
+const RED:     &str = "\x1b[31m";
+const GREEN:   &str = "\x1b[32m";
+const YELLOW:  &str = "\x1b[33m";
+const BLUE:    &str = "\x1b[34m";
+const MAGENTA: &str = "\x1b[35m";
+const CYAN:    &str = "\x1b[36m";
+const WHITE:   &str = "\x1b[37m";
+
+// ── Color helpers ─────────────────────────────────────────────────────────────
+fn color_status(status: &str) -> String {
+    if status.contains("ONLINE") {
+        format!("{}{}● ONLINE{}", GREEN, BOLD, RESET)
+    } else {
+        format!("{}{}● OFFLINE{}", RED, BOLD, RESET)
+    }
+}
+
+fn color_ping(ping: &str) -> String {
+    if ping == "Timeout" {
+        return format!("{}{} Timeout{}", RED, BOLD, RESET);
+    }
+    let ms: f64 = ping.replace(" ms", "").trim().parse().unwrap_or(9999.0);
+    if ms < 50.0 {
+        format!("{}{}{} ms{}", GREEN, BOLD, ping, RESET)
+    } else if ms < 150.0 {
+        format!("{}{}{} ms{}", YELLOW, BOLD, ping, RESET)
+    } else {
+        format!("{}{}{} ms{}", RED, BOLD, ping, RESET)
+    }
+}
+
+fn color_rssi(rssi: &str) -> String {
+    if rssi == "N/A" {
+        return format!("{}{}N/A{}", DIM, BOLD, RESET);
+    }
+    let dbm: f64 = rssi.replace(" dBm", "").trim().parse().unwrap_or(-999.0);
+    if dbm >= -50.0 {
+        format!("{}{}{} (Excellent){}", GREEN, BOLD, rssi, RESET)
+    } else if dbm >= -65.0 {
+        format!("{}{}{} (Good){}", GREEN, BOLD, rssi, RESET)
+    } else if dbm >= -75.0 {
+        format!("{}{}{} (Fair){}", YELLOW, BOLD, rssi, RESET)
+    } else {
+        format!("{}{}{} (Weak){}", RED, BOLD, rssi, RESET)
+    }
+}
+
+fn color_clients(clients: &str) -> String {
+    let n: i32 = clients.parse().unwrap_or(0);
+    if n == 0 {
+        format!("{}{}0 device(s){}", RED, BOLD, RESET)
+    } else if n <= 3 {
+        format!("{}{}{} device(s){}", GREEN, BOLD, clients, RESET)
+    } else if n <= 8 {
+        format!("{}{}{} device(s){}", YELLOW, BOLD, clients, RESET)
+    } else {
+        format!("{}{}{} device(s){}", RED, BOLD, clients, RESET)
+    }
+}
+
+// ── Spinner animation ─────────────────────────────────────────────────────────
+const SPINNER_CHARS: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+fn spinner_frame(tick: usize) -> char {
+    SPINNER_CHARS[tick % SPINNER_CHARS.len()]
+}
+
+// ── Pulsing dot animation ─────────────────────────────────────────────────────
+const PULSE_CHARS: &[&str] = &["○", "◎", "●", "◎"];
+
+fn pulse_frame(tick: usize) -> &'static str {
+    PULSE_CHARS[tick % PULSE_CHARS.len()]
+}
+
+// ── Progress bar ──────────────────────────────────────────────────────────────
+fn progress_bar(value: f64, max: f64, width: usize) -> String {
+    let ratio = if max > 0.0 { (value / max).min(1.0) } else { 0.0 };
+    let filled = (ratio * width as f64) as usize;
+    let empty = width.saturating_sub(filled);
+
+    let bar_color = if ratio < 0.3 {
+        GREEN
+    } else if ratio < 0.7 {
+        YELLOW
+    } else {
+        RED
+    };
+
+    format!("{}{}{}{}{}{}{}{}",
+        bar_color, BOLD,
+        "█".repeat(filled),
+        DIM,
+        "░".repeat(empty),
+        RESET, RESET, RESET
+    )
+}
+
+// ── Header color cycling ──────────────────────────────────────────────────────
+const HEADER_COLORS: &[&str] = &[CYAN, BLUE, MAGENTA, RED, YELLOW, GREEN];
+
+fn header_color(tick: usize) -> &'static str {
+    HEADER_COLORS[tick % HEADER_COLORS.len()]
+}
+
 // ── Device found by nmap ─────────────────────────────────────────────────────
 #[derive(Clone)]
 struct Device {
@@ -31,7 +148,8 @@ struct Stats {
 
 // ── Terminal helpers ──────────────────────────────────────────────────────────
 fn clear_terminal() {
-    std::process::Command::new("clear").status().ok();
+    print!("\x1b[2J\x1b[H");
+    io::Write::flush(&mut io::stdout()).ok();
 }
 
 // Put terminal in raw mode so we can read single keypresses without Enter
@@ -92,13 +210,11 @@ fn run_nmap_scan() -> Vec<Device> {
     let mut current_host = String::new();
     let mut current_mac  = String::new();
 
-    // Regex patterns matching your nmap output format
     let re_host = Regex::new(r"Nmap scan report for (.+?) \((\d+\.\d+\.\d+\.\d+)\)|Nmap scan report for (\d+\.\d+\.\d+\.\d+)").unwrap();
     let re_mac  = Regex::new(r"MAC Address: ([0-9A-F:]{17})").unwrap();
 
     for line in text.lines() {
         if let Some(cap) = re_host.captures(line) {
-            // Push previous device if any
             if !current_host.is_empty() {
                 let parts: Vec<&str> = current_host.splitn(2, '|').collect();
                 devices.push(Device {
@@ -109,17 +225,14 @@ fn run_nmap_scan() -> Vec<Device> {
                 current_mac.clear();
             }
             if cap.get(1).is_some() {
-                // "hostname (ip)" format
                 current_host = format!("{}|{}", cap[1].trim(), cap[2].trim());
             } else {
-                // bare IP format
                 current_host = format!("{}|{}", cap[3].trim(), cap[3].trim());
             }
         } else if let Some(cap) = re_mac.captures(line) {
             current_mac = cap[1].to_string();
         }
     }
-    // Push last device
     if !current_host.is_empty() {
         let parts: Vec<&str> = current_host.splitn(2, '|').collect();
         devices.push(Device {
@@ -128,7 +241,6 @@ fn run_nmap_scan() -> Vec<Device> {
             mac:      current_mac,
         });
     }
-    // Rename known devices
     for dev in &mut devices {
         match dev.hostname.as_str() {
             "_gateway"    => dev.hostname = "Router".into(),
@@ -194,74 +306,125 @@ fn render(
     scan_open: bool,
     devices: &[Device],
     scanning: bool,
+    tick: usize,
+    max_upload: f64,
+    max_download: f64,
+    sent_bytes: f64,
+    received_bytes: f64,
 ) {
     clear_terminal();
+
+    let hc = header_color(tick);
+    println!("{}{}{}{}{}", hc, BOLD, ASCII_ART, RESET, RESET);
+
+    println!("{}{}─────────────────────────────────────────────────────────────{}", DIM, BOLD, RESET);
     println!();
-    println!("  Router Agent");
+
+    let pulse = pulse_frame(tick);
+    let status_color = if d.status.contains("ONLINE") { GREEN } else { RED };
+    println!("  {}{}{} Status    : {}{}{}", status_color, BOLD, pulse, RESET, color_status(&d.status), RESET);
+
+    println!("  {}{}◈{} Internet  : {}", CYAN, BOLD, RESET, color_ping(latency));
+
+    println!("  {}{}◈{} Signal    : {}", CYAN, BOLD, RESET, color_rssi(&d.rssi));
+
+    println!("  {}{}◈{} Clients   : {}", CYAN, BOLD, RESET, color_clients(&d.clients));
+
+    println!("  {}{}◈{} Uptime    : {}{}{}{}{}", CYAN, BOLD, RESET, WHITE, BOLD, d.uptime, RESET, RESET);
+
     println!();
-    println!("  System Status   : {}", d.status);
-    println!("  Internet Ping   : {}", latency);
-    println!("  Signal (RSSI)   : {}", d.rssi);
-    println!("  Active Clients  : {} device(s) connected", d.clients);
-    println!("  Router Uptime   : {}", d.uptime);
+
+    let up_bar = progress_bar(sent_bytes, max_upload, 30);
+    println!("  {}↑{} Upload    : {}{} {}", GREEN, RESET, WHITE, d.sent, upload);
+    println!("  {}  {}           {} {}", DIM, RESET, up_bar, RESET);
+
+    let down_bar = progress_bar(received_bytes, max_download, 30);
+    println!("  {}↓{} Download  : {}{} {}", BLUE, RESET, WHITE, d.received, download);
+    println!("  {}  {}           {} {}", DIM, RESET, down_bar, RESET);
+
     println!();
-    println!("  Data Uploaded   : {}  ↑ {}", d.sent, upload);
-    println!("  Data Downloaded : {}  ↓ {}", d.received, download);
-    println!();
-    println!("  [s] Network Scan");
+    println!("{}{}─────────────────────────────────────────────────────────────{}", DIM, BOLD, RESET);
     println!();
 
     if scan_open {
-        println!("  ── Network Devices ───────────────────────────────────");
+        println!("  {}{}[s] Network Scan{}", YELLOW, BOLD, RESET);
+    } else {
+        println!("  {}[s] Network Scan{}", DIM, RESET);
+    }
+    println!();
+
+    if scan_open {
+        println!("  {}{}── Network Devices ─────────────────────────────────────{}", CYAN, BOLD, RESET);
         if scanning {
-            println!("  Scanning... (this takes ~3 seconds)");
+            let sp = spinner_frame(tick);
+            println!("  {}{}{} Scanning network{}... (this takes ~3 seconds){}", MAGENTA, BOLD, sp, RESET, RESET);
         } else if devices.is_empty() {
-            println!("  No devices found.");
+            println!("  {}No devices found.{}", RED, RESET);
         } else {
+            println!("  {}{}{:<16}  {:<20}  {}{}", DIM, BOLD, "IP ADDRESS", "HOSTNAME", "MAC ADDRESS", RESET);
+            println!("  {}──────────────────────────────────────────────────────────{}", DIM, RESET);
             for dev in devices {
-                let mac_str = if dev.mac.is_empty() { "  (this device)".into() }
-                              else { format!("  {}", dev.mac) };
-                println!("  {:<16}  {:<20}{}", dev.ip, dev.hostname, mac_str);
+                let mac_str = if dev.mac.is_empty() { "(this device)".into() }
+                              else { dev.mac.as_str() };
+                let host_color = match dev.hostname.as_str() {
+                    "Router" => CYAN,
+                    "Methnula" => MAGENTA,
+                    _ => WHITE,
+                };
+                println!("  {}{:<16}  {}{:<20}{}  {}{}{}",
+                    WHITE, dev.ip,
+                    host_color, dev.hostname, RESET,
+                    DIM, mac_str, RESET
+                );
             }
         }
-        println!("  ──────────────────────────────────────────────────────");
+        println!("  {}──────────────────────────────────────────────────────────{}", DIM, RESET);
         println!();
     }
+
+    println!("{}  Press [s] to toggle scan  •  Press [q] to quit{}", DIM, RESET);
+    println!();
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 fn main() {
     set_raw_mode(true);
 
-    // Shared state between main loop and keyboard thread
-    let scan_open: Arc<Mutex<bool>>      = Arc::new(Mutex::new(false));
-    let scanning:  Arc<Mutex<bool>>      = Arc::new(Mutex::new(false));
+    let scan_open: Arc<Mutex<bool>>        = Arc::new(Mutex::new(false));
+    let scanning:  Arc<Mutex<bool>>        = Arc::new(Mutex::new(false));
     let devices:   Arc<Mutex<Vec<Device>>> = Arc::new(Mutex::new(vec![]));
+    let quit:      Arc<Mutex<bool>>        = Arc::new(Mutex::new(false));
 
-    // Keyboard listener thread
     let scan_open_kb = Arc::clone(&scan_open);
     let scanning_kb  = Arc::clone(&scanning);
     let devices_kb   = Arc::clone(&devices);
+    let quit_kb      = Arc::clone(&quit);
 
     thread::spawn(move || {
         let stdin = io::stdin();
         let mut buf = [0u8; 1];
         loop {
             if stdin.lock().read(&mut buf).is_ok() {
-                if buf[0] == b's' || buf[0] == b'S' {
-                    let mut open = scan_open_kb.lock().unwrap();
-                    *open = !*open;
-                    if *open {
-                        // Start scan in background
-                        let scanning2 = Arc::clone(&scanning_kb);
-                        let devices2  = Arc::clone(&devices_kb);
-                        *scanning_kb.lock().unwrap() = true;
-                        thread::spawn(move || {
-                            let found = run_nmap_scan();
-                            *devices2.lock().unwrap()  = found;
-                            *scanning2.lock().unwrap() = false;
-                        });
+                match buf[0] {
+                    b's' | b'S' => {
+                        let mut open = scan_open_kb.lock().unwrap();
+                        *open = !*open;
+                        if *open {
+                            let scanning2 = Arc::clone(&scanning_kb);
+                            let devices2  = Arc::clone(&devices_kb);
+                            *scanning_kb.lock().unwrap() = true;
+                            thread::spawn(move || {
+                                let found = run_nmap_scan();
+                                *devices2.lock().unwrap()  = found;
+                                *scanning2.lock().unwrap() = false;
+                            });
+                        }
                     }
+                    b'q' | b'Q' => {
+                        *quit_kb.lock().unwrap() = true;
+                        break;
+                    }
+                    _ => {}
                 }
             }
         }
@@ -271,8 +434,15 @@ fn main() {
     let mut prev_received: f64 = 0.0;
     let mut prev_time = Instant::now();
     let mut first = true;
+    let mut tick: usize = 0;
+    let mut max_upload: f64 = 1.0;
+    let mut max_download: f64 = 1.0;
 
     loop {
+        if *quit.lock().unwrap() {
+            break;
+        }
+
         let stats   = get_hermes_stats();
         let latency = get_ping_latency();
         let now     = Instant::now();
@@ -283,6 +453,8 @@ fn main() {
         } else {
             let up   = (stats.sent_bytes     - prev_sent)     / elapsed;
             let down = (stats.received_bytes - prev_received) / elapsed;
+            if up > max_upload   { max_upload = up * 1.2; }
+            if down > max_download { max_download = down * 1.2; }
             (format_speed(up), format_speed(down))
         };
 
@@ -290,14 +462,20 @@ fn main() {
             let open     = *scan_open.lock().unwrap();
             let scanning = *scanning.lock().unwrap();
             let devs     = devices.lock().unwrap().clone();
-            render(&stats, &upload, &download, &latency, open, &devs, scanning);
+            render(&stats, &upload, &download, &latency, open, &devs, scanning,
+                   tick, max_upload, max_download, stats.sent_bytes, stats.received_bytes);
         }
 
         prev_sent     = stats.sent_bytes;
         prev_received = stats.received_bytes;
         prev_time     = now;
         first         = false;
+        tick          = tick.wrapping_add(1);
 
-        thread::sleep(Duration::from_secs(2));
+        thread::sleep(Duration::from_millis(500));
     }
+
+    set_raw_mode(false);
+    clear_terminal();
+    println!("{}{}Router Agent closed.{}", GREEN, BOLD, RESET);
 }
