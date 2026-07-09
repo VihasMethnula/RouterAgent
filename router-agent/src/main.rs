@@ -75,6 +75,102 @@ fn typewriter_print(text: &str, delay_ms: u64) {
     println!();
 }
 
+// ── Initializing animation ────────────────────────────────────────────────────
+const INIT_FRAMES: &[&str] = &[
+    r#"
+    ╔══════════════════════════════════════════════════════════╗
+    ║                                                          ║
+    ║     ███╗   ███╗██╗███╗   ██╗██████╗ ███████╗██████╗     ║
+    ║     ████╗ ████║██║████╗  ██║██╔══██╗██╔════╝██╔══██╗    ║
+    ║     ██╔████╔██║██║██╔██╗ ██║██║  ██║█████╗  ██████╔╝    ║
+    ║     ██║╚██╔╝██║██║██║╚██╗██║██║  ██║██╔══╝  ██╔══██╗    ║
+    ║     ██║ ╚═╝ ██║██║██║ ╚████║██████╔╝███████╗██║  ██║    ║
+    ║     ╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝  ╚═╝    ║
+    ║                                                          ║
+    ╚══════════════════════════════════════════════════════════╝"#,
+    r#"
+    ╔══════════════════════════════════════════════════════════╗
+    ║ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ ║
+    ║ ▓                                                  ▓ ║
+    ║ ▓     ███╗   ███╗██╗███╗   ██╗██████╗ ███████╗██████╗ ▓ ║
+    ║ ▓     ████╗ ████║██║████╗  ██║██╔══██╗██╔════╝██╔══██╗▓ ║
+    ║ ▓     ██╔████╔██║██║██╔██╗ ██║██║  ██║█████╗  ██████╔╝▓ ║
+    ║ ▓     ██║╚██╔╝██║██║██║╚██╗██║██║  ██║██╔══╝  ██╔══██╗▓ ║
+    ║ ▓     ██║ ╚═╝ ██║██║██║ ╚████║██████╔╝███████╗██║  ██║▓ ║
+    ║ ▓     ╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝  ╚═╝▓ ║
+    ║ ▓                                                  ▓ ║
+    ║ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ ║
+    ╚══════════════════════════════════════════════════════════╝"#,
+    r#"
+    ╔══════════════════════════════════════════════════════════╗
+    ║░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░║
+    ║░                                                    ░║
+    ║░    ███╗   ███╗██╗███╗   ██╗██████╗ ███████╗██████╗  ░║
+    ║░    ████╗ ████║██║████╗  ██║██╔══██╗██╔════╝██╔══██╗ ░║
+    ║░    ██╔████╔██║██║██╔██╗ ██║██║  ██║█████╗  ██████╔╝ ░║
+    ║░    ██║╚██╔╝██║██║██║╚██╗██║██║  ██║██╔══╝  ██╔══██╗ ░║
+    ║░    ██║ ╚═╝ ██║██║██║ ╚████║██████╔╝███████╗██║  ██║ ░║
+    ║░    ╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝  ╚═╝ ░║
+    ║░                                                    ░║
+    ║░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░║
+    ╚══════════════════════════════════════════════════════════╝"#,
+];
+
+fn show_initializing_animation() {
+    clear_terminal();
+    let total_frames = 30;
+    
+    for i in 0..total_frames {
+        clear_terminal();
+        println!();
+        
+        let frame_idx = i % INIT_FRAMES.len();
+        let color = match i % 6 {
+            0 => CYAN,
+            1 => GREEN,
+            2 => YELLOW,
+            3 => BLUE,
+            4 => MAGENTA,
+            5 => RED,
+            _ => CYAN,
+        };
+        
+        for line in INIT_FRAMES[frame_idx].lines() {
+            println!("{}{}{}{}", color, BOLD, line, RESET);
+        }
+        
+        println!();
+        let dots = ".".repeat((i / 3) % 4);
+        let spinner = spinner_frame(i);
+        println!("  {}{}{} Initializing{}{}", CYAN, BOLD, spinner, dots, RESET);
+        
+        let progress = ((i as f64 / total_frames as f64) * 100.0) as u32;
+        let bar_width: usize = 30;
+        let filled = ((progress as f64 / 100.0) * bar_width as f64) as usize;
+        let empty = bar_width.saturating_sub(filled);
+        println!("  {}[{}{}{}]{} {}%", GREEN, "█".repeat(filled), DIM, "░".repeat(empty), RESET, progress);
+        
+        println!();
+        let status_messages = [
+            "Loading configuration...",
+            "Checking network interface...",
+            "Initializing router connection...",
+            "Preparing scanner modules...",
+            "Starting services...",
+        ];
+        let msg_idx = (i / 6) % status_messages.len();
+        println!("  {}{}{}{}{}", DIM, BOLD, status_messages[msg_idx], RESET, RESET);
+        
+        thread::sleep(Duration::from_millis(100));
+    }
+    
+    clear_terminal();
+    println!();
+    println!("  {}{}✓ Initialization complete!{}", GREEN, BOLD, RESET);
+    println!();
+    thread::sleep(Duration::from_millis(500));
+}
+
 // ── Color helpers ─────────────────────────────────────────────────────────────
 fn color_status(status: &str) -> String {
     if status.contains("ONLINE") {
@@ -447,6 +543,8 @@ fn render(
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 fn main() {
+    set_raw_mode(true);
+    show_initializing_animation();
     set_raw_mode(true);
 
     let scan_open: Arc<Mutex<bool>>        = Arc::new(Mutex::new(false));
