@@ -83,99 +83,126 @@ fn typewriter_print(text: &str, delay_ms: u64) {
 }
 
 // ── Initializing animation ────────────────────────────────────────────────────
-const INIT_FRAMES: &[&str] = &[
-    r#"
-    ╔══════════════════════════════════════════════════════════╗
-    ║                                                          ║
-    ║     ███╗   ███╗██╗███╗   ██╗██████╗ ███████╗██████╗     ║
-    ║     ████╗ ████║██║████╗  ██║██╔══██╗██╔════╝██╔══██╗    ║
-    ║     ██╔████╔██║██║██╔██╗ ██║██║  ██║█████╗  ██████╔╝    ║
-    ║     ██║╚██╔╝██║██║██║╚██╗██║██║  ██║██╔══╝  ██╔══██╗    ║
-    ║     ██║ ╚═╝ ██║██║██║ ╚████║██████╔╝███████╗██║  ██║    ║
-    ║     ╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝  ╚═╝    ║
-    ║                                                          ║
-    ╚══════════════════════════════════════════════════════════╝"#,
-    r#"
-    ╔══════════════════════════════════════════════════════════╗
-    ║ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ ║
-    ║ ▓                                                  ▓ ║
-    ║ ▓     ███╗   ███╗██╗███╗   ██╗██████╗ ███████╗██████╗ ▓ ║
-    ║ ▓     ████╗ ████║██║████╗  ██║██╔══██╗██╔════╝██╔══██╗▓ ║
-    ║ ▓     ██╔████╔██║██║██╔██╗ ██║██║  ██║█████╗  ██████╔╝▓ ║
-    ║ ▓     ██║╚██╔╝██║██║██║╚██╗██║██║  ██║██╔══╝  ██╔══██╗▓ ║
-    ║ ▓     ██║ ╚═╝ ██║██║██║ ╚████║██████╔╝███████╗██║  ██║▓ ║
-    ║ ▓     ╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝  ╚═╝▓ ║
-    ║ ▓                                                  ▓ ║
-    ║ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ ║
-    ╚══════════════════════════════════════════════════════════╝"#,
-    r#"
-    ╔══════════════════════════════════════════════════════════╗
-    ║░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░║
-    ║░                                                    ░║
-    ║░    ███╗   ███╗██╗███╗   ██╗██████╗ ███████╗██████╗  ░║
-    ║░    ████╗ ████║██║████╗  ██║██╔══██╗██╔════╝██╔══██╗ ░║
-    ║░    ██╔████╔██║██║██╔██╗ ██║██║  ██║█████╗  ██████╔╝ ░║
-    ║░    ██║╚██╔╝██║██║██║╚██╗██║██║  ██║██╔══╝  ██╔══██╗ ░║
-    ║░    ██║ ╚═╝ ██║██║██║ ╚████║██████╔╝███████╗██║  ██║ ░║
-    ║░    ╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝  ╚═╝ ░║
-    ║░                                                    ░║
-    ║░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░║
-    ╚══════════════════════════════════════════════════════════╝"#,
+// Compact logo (used once at the top of the boot screen).
+const BOOT_LOGO: &str = r#"
+     ██████╗  ██████╗ ██╗   ██╗████████╗███████╗██████╗
+     ██╔══██╗██╔═══██╗██║   ██║╚══██╔══╝██╔════╝██╔══██╗
+     ██████╔╝██║   ██║██║   ██║   ██║   █████╗  ██████╔╝
+     ██╔══██╗██║   ██║██║   ██║   ██║   ██╔══╝  ██╔══██╗
+     ██║  ██║╚██████╔╝╚██████╔╝   ██║   ███████╗██║  ██║
+     ╚═╝  ╚═╝ ╚═════╝  ╚═════╝    ╚═╝   ╚══════╝╚═╝  ╚═╝
+                  A G E N T   ::   v 0 . 2 . 4"#;
+
+// Boot steps shown in the log as they "complete".
+const BOOT_STEPS: &[&str] = &[
+    "  loading configuration",
+    "  checking network interface",
+    "  initializing router connection",
+    "  preparing scanner modules",
+    "  starting web interface",
+    "  ready",
 ];
 
-fn show_initializing_animation() {
-    clear_terminal();
-    let total_frames = 30;
-    
-    for i in 0..total_frames {
-        clear_terminal();
-        println!();
-        
-        let frame_idx = i % INIT_FRAMES.len();
-        let color = match i % 6 {
-            0 => CYAN,
-            1 => GREEN,
-            2 => YELLOW,
-            3 => BLUE,
-            4 => MAGENTA,
-            5 => RED,
-            _ => CYAN,
-        };
-        
-        for line in INIT_FRAMES[frame_idx].lines() {
-            println!("{}{}{}{}", color, BOLD, line, RESET);
+// Render a smooth gradient progress bar of `width` cells at progress `p` in 0..=1.
+// Uses a cyan→green→yellow→red gradient along the filled portion.
+fn gradient_bar(progress: f64, width: usize) -> String {
+    let p = progress.clamp(0.0, 1.0);
+    let filled = (p * width as f64).round() as usize;
+    let head = filled.saturating_sub(0).min(width);
+    let mut out = String::with_capacity(width * 16);
+
+    // leading edge: bright head cell
+    if head > 0 {
+        for i in 0..head {
+            // hue ramp: 0..0.5 cyan->green, 0.5..0.85 green->yellow, 0.85..1 yellow->red
+            let t = i as f64 / width as f64;
+            let color = if t < 0.5 { CYAN }
+                        else if t < 0.85 { GREEN }
+                        else { YELLOW };
+            out.push_str(color);
+            out.push_str(BOLD);
+            if i + 1 == head && head < width {
+                out.push('▓'); // leading edge marker
+            } else {
+                out.push('█');
+            }
+            out.push_str(RESET);
         }
-        
-        println!();
-        let dots = ".".repeat((i / 3) % 4);
-        let spinner = spinner_frame(i);
-        println!("  {}{}{} Initializing{}{}", CYAN, BOLD, spinner, dots, RESET);
-        
-        let progress = ((i as f64 / total_frames as f64) * 100.0) as u32;
-        let bar_width: usize = 30;
-        let filled = ((progress as f64 / 100.0) * bar_width as f64) as usize;
-        let empty = bar_width.saturating_sub(filled);
-        println!("  {}[{}{}{}]{} {}%", GREEN, "█".repeat(filled), DIM, "░".repeat(empty), RESET, progress);
-        
-        println!();
-        let status_messages = [
-            "Loading configuration...",
-            "Checking network interface...",
-            "Initializing router connection...",
-            "Preparing scanner modules...",
-            "Starting services...",
-        ];
-        let msg_idx = (i / 6) % status_messages.len();
-        println!("  {}{}{}{}{}", DIM, BOLD, status_messages[msg_idx], RESET, RESET);
-        
-        thread::sleep(Duration::from_millis(100));
     }
-    
-    clear_terminal();
+    // empty cells
+    if head < width {
+        out.push_str(DIM);
+        let empty = "░".repeat(width - head);
+        out.push_str(&empty);
+        out.push_str(RESET);
+    }
+    out
+}
+
+fn show_initializing_animation() {
+    // Hide cursor, clear screen, move home.
+    print!("\x1b[?25l\x1b[2J\x1b[H");
+    io::stdout().flush().ok();
+
+    // Draw the static logo in cyan.
     println!();
-    println!("  {}{}✓ Initialization complete!{}", GREEN, BOLD, RESET);
+    for line in BOOT_LOGO.lines() {
+        println!("    {}{}{}{}", CYAN, BOLD, line, RESET);
+    }
     println!();
-    thread::sleep(Duration::from_millis(500));
+    println!("    {}{}initializing…{}", DIM, BOLD, RESET);
+    println!();
+
+    // Total animation duration: ~1.6s, ~32 ticks at 50ms.
+    let total_ticks: usize = 32;
+    let tick_ms: u64 = 50;
+    let bar_width: usize = 36;
+
+    // Remember cursor position at the start of the live region.
+    print!("\x1b[s");
+    io::stdout().flush().ok();
+
+    for i in 0..total_ticks {
+        let progress = (i as f64 + 1.0) / total_ticks as f64;
+
+        // Restore cursor to saved position and clear to end of screen.
+        print!("\x1b[u\x1b[J");
+
+        println!();
+        // Progress bar + percentage (percentage colored by progress).
+        let bar = gradient_bar(progress, bar_width);
+        let pct = (progress * 100.0).round() as u32;
+        let pct_color = if pct < 50 { GREEN } else if pct < 85 { YELLOW } else { RED };
+        println!("  {}{}{} {}{}{}%{}", BOLD, bar, RESET, pct_color, BOLD, pct, RESET);
+        println!();
+        // Tagline that pulses with the spinner.
+        let tag = match (i / 4) % 4 {
+            0 => "warming up the routers",
+            1 => "tuning the antennas",
+            2 => "syncing the network",
+            _ => "booting dashboard",
+        };
+        println!("  {}{}{}", DIM, tag, RESET);
+
+        io::stdout().flush().ok();
+        thread::sleep(Duration::from_millis(tick_ms));
+    }
+
+    // Final frame: full success state, then reveal the cursor.
+    print!("\x1b[u\x1b[J");
+    for step in BOOT_STEPS.iter() {
+        println!("  {}{}✓ {}{}", GREEN, BOLD, step.trim(), RESET);
+    }
+    println!();
+    let bar = gradient_bar(1.0, bar_width);
+    println!("  {}{}{} {}{}{}%{}", BOLD, bar, RESET, GREEN, BOLD, 100, RESET);
+    println!();
+    println!("  {}{}ready.{}", GREEN, BOLD, RESET);
+
+    println!();
+    print!("\x1b[?25h");
+    io::stdout().flush().ok();
+    thread::sleep(Duration::from_millis(350));
 }
 
 // ── Color helpers ─────────────────────────────────────────────────────────────
@@ -653,8 +680,17 @@ async fn main() {
             break;
         }
 
-        let stats   = get_hermes_stats();
-        let latency = get_ping_latency();
+        let stats   = tokio::task::spawn_blocking(get_hermes_stats)
+            .await
+            .unwrap_or_else(|_| Stats {
+                status: "OFFLINE (Check Wi-Fi Connection)".into(),
+                clients: "0".into(), rssi: "N/A".into(), uptime: "N/A".into(),
+                sent: "N/A".into(), received: "N/A".into(),
+                sent_bytes: 0.0, received_bytes: 0.0,
+            });
+        let latency = tokio::task::spawn_blocking(get_ping_latency)
+            .await
+            .unwrap_or_else(|_| "Timeout".to_string());
         let now     = Instant::now();
         let elapsed = now.duration_since(prev_time).as_secs_f64();
 
