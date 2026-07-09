@@ -43,11 +43,7 @@ cd RouterAgent/router-agent
 cargo install --path .
 ```
 
-Or use
-
-```bash
-curl https://raw.githubusercontent.com/VihasMethnula/RouterAgent/refs/heads/main/install.sh | bash
-```
+Or copy the install.sh raw and run it
 
 This installs the `Router` binary to your Cargo bin directory, making it available globally.
 
