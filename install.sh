@@ -70,6 +70,8 @@ fi
 echo "Installing the 'router' binary (this may take a few minutes)..."
 if cargo install --path router-agent; then
   echo ""
+  sudo cp ~/.cargo/bin/router /usr/local/bin/router
+  sudo chmod +x /usr/local/bin/router
   sudo cp router-agent.service /etc/systemd/system/router-agent.service
   sudo systemctl daemon-reload
   sudo systemctl enable router-agent.service
@@ -77,6 +79,7 @@ if cargo install --path router-agent; then
   echo "Installation completed successfully."
   echo "Run 'router' to start the dashboard, or see README.md for the"
   echo "systemd service instructions."
+  echo "Access the web dashboard on http://127.0.0.1:5090"
 else
   echo "Cargo install failed."
   exit 1
