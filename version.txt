@@ -1,2 +1,1 @@
-v1.4
-New feautures - Added install.sh and systemd service file
+v2.5

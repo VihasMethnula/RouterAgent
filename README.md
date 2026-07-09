@@ -39,35 +39,16 @@ Built to work with an ESP router flashed using [Martin Ger's](https://github.com
 
 ```bash
 git clone https://github.com/VihasMethnula/RouterAgent.git
-cd RouterAgent/router-agent
-cargo install --path .
+cd RouterAgent
+chmod +x install.sh
+./install.sh
 ```
-
-Or copy the install.sh raw and run it
-
-This installs the `Router` binary to your Cargo bin directory, making it available globally.
-
-## Running as a service (Linux/systemd)
-
-The repository ships a systemd unit file (`router-agent.service`) that runs the dashboard in headless mode and exposes it on the configured port.
-
+Or run this one liner 
 ```bash
-# 1. Install the binary
-cargo install --path router-agent
-
-# 2. Symlink it to /usr/local/bin so the unit file's ExecStart resolves
-sudo ln -sf "$HOME/.cargo/bin/router" /usr/local/bin/router
-
-# 3. Install and start the service
-sudo cp router-agent.service /etc/systemd/system/router-agent.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now router-agent
-
-# 4. Follow the logs
-journalctl -u router-agent -f
+git clone https://github.com/VihasMethnula/RouterAgent.git && cd RouterAgent && chmod +x install.sh && ./install.sh
 ```
-
-The unit runs as `root` so `sudo nmap` works without extra configuration. Config is read from `~/.config/router/config.yaml` (created with defaults on first run).
+This installs the `Router` binary to your Cargo bin directory, making it available globally.
+Now you can acess the web dashboard at (http://localhost:5090) or if that doesnt work try (http://127.0.0.1:5090). 
 
 ## Usage
 
@@ -76,6 +57,9 @@ Connect to your ESP router's Wi-Fi network, then run:
 ```bash
 Router
 ```
+This brings you to the TUI
+
+If youre a GUI guy you can use the web dashboard (http://localhost:5090)
 
 Once running:
 
@@ -86,3 +70,11 @@ Once running:
 ## Credits
 
 - [Martin Ger](https://github.com/martin-ger) — ESP router firmware this project connects to
+
+## Supporters 
+
+- [Rashmina Adithya](https://github.com/rashmina-a) - Add web interface , Animations , Banners and systemd service 
+
+## Version 
+
+v2.5
