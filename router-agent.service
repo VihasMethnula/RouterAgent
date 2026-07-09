@@ -1,0 +1,39 @@
+[Unit]
+Description=Router Agent - ESP router monitoring dashboard
+Documentation=https://github.com/VihasMethnula/RouterAgent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/local/bin/router --headless
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=10s
+
+# Logs go to journald - view with: journalctl -u router-agent -f
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=router-agent
+
+# Hardening: lock down what the service can do on the system.
+# ProtectHome is left at its default (false) so the service can read
+# ~/.config/router/config.yaml via dirs::home_dir().
+NoNewPrivileges=false
+ProtectSystem=strict
+ProtectHome=false
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+IPAddressAllow=any
+IPAddressDeny=
+
+[Install]
+WantedBy=multi-user.target

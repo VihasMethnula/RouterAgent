@@ -47,6 +47,28 @@ Or copy the install.sh raw and run it
 
 This installs the `Router` binary to your Cargo bin directory, making it available globally.
 
+## Running as a service (Linux/systemd)
+
+The repository ships a systemd unit file (`router-agent.service`) that runs the dashboard in headless mode and exposes it on the configured port.
+
+```bash
+# 1. Install the binary
+cargo install --path router-agent
+
+# 2. Symlink it to /usr/local/bin so the unit file's ExecStart resolves
+sudo ln -sf "$HOME/.cargo/bin/router" /usr/local/bin/router
+
+# 3. Install and start the service
+sudo cp router-agent.service /etc/systemd/system/router-agent.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now router-agent
+
+# 4. Follow the logs
+journalctl -u router-agent -f
+```
+
+The unit runs as `root` so `sudo nmap` works without extra configuration. Config is read from `~/.config/router/config.yaml` (created with defaults on first run).
+
 ## Usage
 
 Connect to your ESP router's Wi-Fi network, then run:

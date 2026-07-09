@@ -1,2 +1,2 @@
-v1.3
-New feautures - Added install.sh
+v1.4
+New feautures - Added install.sh and systemd service file
