@@ -1,10 +1,11 @@
 use std::{
-    io::{self, Read},
+    io::{self, Read, Write},
     sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant},
 };
 use regex::Regex;
+use rand::Rng;
 
 const ROUTER_URL: &str = "http://192.168.4.1";
 const NETWORK:    &str = "192.168.4.0/24";
@@ -29,6 +30,50 @@ const BLUE:    &str = "\x1b[34m";
 const MAGENTA: &str = "\x1b[35m";
 const CYAN:    &str = "\x1b[36m";
 const WHITE:   &str = "\x1b[37m";
+
+// ── Matrix effect constants ───────────────────────────────────────────────────
+const MATRIX_ROWS: usize = 4;
+const MATRIX_COLS: usize = 12;
+const MATRIX_ANIM_FRAMES: usize = 4;
+
+// ── Matrix grid generation ────────────────────────────────────────────────────
+fn generate_random_matrix() -> [[u8; MATRIX_COLS]; MATRIX_ROWS] {
+    let mut rng = rand::thread_rng();
+    let mut grid = [[0u8; MATRIX_COLS]; MATRIX_ROWS];
+    for row in &mut grid {
+        for cell in row.iter_mut() {
+            *cell = rng.gen_range(0..=1);
+        }
+    }
+    grid
+}
+
+fn generate_all_ones_matrix() -> [[u8; MATRIX_COLS]; MATRIX_ROWS] {
+    [[1u8; MATRIX_COLS]; MATRIX_ROWS]
+}
+
+fn render_matrix_grid(grid: &[[u8; MATRIX_COLS]; MATRIX_ROWS]) {
+    for row in grid {
+        let line: String = row.iter().map(|&val| {
+            if val == 1 {
+                format!("{}{} {}{}", GREEN, BOLD, val, RESET)
+            } else {
+                format!("{}{} {}{}", RED, BOLD, val, RESET)
+            }
+        }).collect::<Vec<_>>().join(" ");
+        println!("    {}", line);
+    }
+}
+
+// ── Typewriter animation ──────────────────────────────────────────────────────
+fn typewriter_print(text: &str, delay_ms: u64) {
+    for ch in text.chars() {
+        print!("{}", ch);
+        io::stdout().flush().ok();
+        thread::sleep(Duration::from_millis(delay_ms));
+    }
+    println!();
+}
 
 // ── Color helpers ─────────────────────────────────────────────────────────────
 fn color_status(status: &str) -> String {
@@ -311,6 +356,8 @@ fn render(
     max_download: f64,
     sent_bytes: f64,
     received_bytes: f64,
+    matrix_frame: Option<&[[u8; MATRIX_COLS]; MATRIX_ROWS]>,
+    scan_complete: bool,
 ) {
     clear_terminal();
 
@@ -354,32 +401,44 @@ fn render(
     println!();
 
     if scan_open {
-        println!("  {}{}── Network Devices ─────────────────────────────────────{}", CYAN, BOLD, RESET);
         if scanning {
-            let sp = spinner_frame(tick);
-            println!("  {}{}{} Scanning network{}... (this takes ~3 seconds){}", MAGENTA, BOLD, sp, RESET, RESET);
-        } else if devices.is_empty() {
-            println!("  {}No devices found.{}", RED, RESET);
-        } else {
-            println!("  {}{}{:<16}  {:<20}  {}{}", DIM, BOLD, "IP ADDRESS", "HOSTNAME", "MAC ADDRESS", RESET);
-            println!("  {}──────────────────────────────────────────────────────────{}", DIM, RESET);
-            for dev in devices {
-                let mac_str = if dev.mac.is_empty() { "(this device)".into() }
-                              else { dev.mac.as_str() };
-                let host_color = match dev.hostname.as_str() {
-                    "Router" => CYAN,
-                    "Methnula" => MAGENTA,
-                    _ => WHITE,
-                };
-                println!("  {}{:<16}  {}{:<20}{}  {}{}{}",
-                    WHITE, dev.ip,
-                    host_color, dev.hostname, RESET,
-                    DIM, mac_str, RESET
-                );
+            if let Some(grid) = matrix_frame {
+                println!();
+                render_matrix_grid(grid);
+                println!();
+                let sp = spinner_frame(tick);
+                println!("  {}{}{} Scanning network{}... (this takes ~3 seconds){}", MAGENTA, BOLD, sp, RESET, RESET);
             }
+        } else if scan_complete {
+            println!("  {}{}── Network Devices ─────────────────────────────────────{}", CYAN, BOLD, RESET);
+            if devices.is_empty() {
+                println!("  {}No devices found.{}", RED, RESET);
+            } else {
+                println!("  {}{}{:<16}  {:<20}  {}{}", DIM, BOLD, "IP ADDRESS", "HOSTNAME", "MAC ADDRESS", RESET);
+                println!("  {}──────────────────────────────────────────────────────────{}", DIM, RESET);
+                for dev in devices {
+                    let mac_str = if dev.mac.is_empty() { "(this device)".into() }
+                                  else { dev.mac.as_str() };
+                    let host_color = match dev.hostname.as_str() {
+                        "Router" => CYAN,
+                        "Methnula" => MAGENTA,
+                        _ => WHITE,
+                    };
+                    println!("  {}{:<16}  {}{:<20}{}  {}{}{}",
+                        WHITE, dev.ip,
+                        host_color, dev.hostname, RESET,
+                        DIM, mac_str, RESET
+                    );
+                }
+            }
+            println!("  {}──────────────────────────────────────────────────────────{}", DIM, RESET);
+            println!();
+        } else {
+            println!("  {}{}── Network Devices ─────────────────────────────────────{}", CYAN, BOLD, RESET);
+            println!("  {}Press [s] to start scanning{}", DIM, RESET);
+            println!("  {}──────────────────────────────────────────────────────────{}", DIM, RESET);
+            println!();
         }
-        println!("  {}──────────────────────────────────────────────────────────{}", DIM, RESET);
-        println!();
     }
 
     println!("{}  Press [s] to toggle scan  •  Press [q] to quit{}", DIM, RESET);
@@ -394,11 +453,13 @@ fn main() {
     let scanning:  Arc<Mutex<bool>>        = Arc::new(Mutex::new(false));
     let devices:   Arc<Mutex<Vec<Device>>> = Arc::new(Mutex::new(vec![]));
     let quit:      Arc<Mutex<bool>>        = Arc::new(Mutex::new(false));
+    let scan_complete: Arc<Mutex<bool>>    = Arc::new(Mutex::new(false));
 
     let scan_open_kb = Arc::clone(&scan_open);
     let scanning_kb  = Arc::clone(&scanning);
     let devices_kb   = Arc::clone(&devices);
     let quit_kb      = Arc::clone(&quit);
+    let scan_complete_kb = Arc::clone(&scan_complete);
 
     thread::spawn(move || {
         let stdin = io::stdin();
@@ -412,11 +473,14 @@ fn main() {
                         if *open {
                             let scanning2 = Arc::clone(&scanning_kb);
                             let devices2  = Arc::clone(&devices_kb);
+                            let scan_complete2 = Arc::clone(&scan_complete_kb);
                             *scanning_kb.lock().unwrap() = true;
+                            *scan_complete_kb.lock().unwrap() = false;
                             thread::spawn(move || {
                                 let found = run_nmap_scan();
                                 *devices2.lock().unwrap()  = found;
                                 *scanning2.lock().unwrap() = false;
+                                *scan_complete2.lock().unwrap() = true;
                             });
                         }
                     }
@@ -437,6 +501,12 @@ fn main() {
     let mut tick: usize = 0;
     let mut max_upload: f64 = 1.0;
     let mut max_download: f64 = 1.0;
+
+    let mut matrix_frame_count: usize = 0;
+    let mut current_matrix: [[u8; MATRIX_COLS]; MATRIX_ROWS] = [[0; MATRIX_COLS]; MATRIX_ROWS];
+    let mut last_matrix_tick: usize = 0;
+    let mut show_all_ones: bool = false;
+    let mut typewriter_done: bool = false;
 
     loop {
         if *quit.lock().unwrap() {
@@ -462,8 +532,97 @@ fn main() {
             let open     = *scan_open.lock().unwrap();
             let scanning = *scanning.lock().unwrap();
             let devs     = devices.lock().unwrap().clone();
-            render(&stats, &upload, &download, &latency, open, &devs, scanning,
-                   tick, max_upload, max_download, stats.sent_bytes, stats.received_bytes);
+            let complete = *scan_complete.lock().unwrap();
+
+            if scanning && open {
+                if tick - last_matrix_tick >= 1 {
+                    if matrix_frame_count < MATRIX_ANIM_FRAMES {
+                        current_matrix = generate_random_matrix();
+                        matrix_frame_count += 1;
+                    } else if !show_all_ones {
+                        current_matrix = generate_all_ones_matrix();
+                        show_all_ones = true;
+                    }
+                    last_matrix_tick = tick;
+                }
+                render(&stats, &upload, &download, &latency, open, &devs, true,
+                       tick, max_upload, max_download, stats.sent_bytes, stats.received_bytes,
+                       Some(&current_matrix), false);
+            } else if complete && open && !typewriter_done {
+                set_raw_mode(false);
+                clear_terminal();
+                let hc = header_color(tick);
+                println!("{}{}{}{}{}", hc, BOLD, ASCII_ART, RESET, RESET);
+                println!("{}{}─────────────────────────────────────────────────────────────{}", DIM, BOLD, RESET);
+                println!();
+                let pulse = pulse_frame(tick);
+                let status_color = if stats.status.contains("ONLINE") { GREEN } else { RED };
+                println!("  {}{}{} Status    : {}{}{}", status_color, BOLD, pulse, RESET, color_status(&stats.status), RESET);
+                println!("  {}{}◈{} Internet  : {}", CYAN, BOLD, RESET, color_ping(&latency));
+                println!("  {}{}◈{} Signal    : {}", CYAN, BOLD, RESET, color_rssi(&stats.rssi));
+                println!("  {}{}◈{} Clients   : {}", CYAN, BOLD, RESET, color_clients(&stats.clients));
+                println!("  {}{}◈{} Uptime    : {}{}{}{}{}", CYAN, BOLD, RESET, WHITE, BOLD, stats.uptime, RESET, RESET);
+                println!();
+                let up_bar = progress_bar(stats.sent_bytes, max_upload, 30);
+                println!("  {}↑{} Upload    : {}{} {}", GREEN, RESET, WHITE, stats.sent, upload);
+                println!("  {}  {}           {} {}", DIM, RESET, up_bar, RESET);
+                let down_bar = progress_bar(stats.received_bytes, max_download, 30);
+                println!("  {}↓{} Download  : {}{} {}", BLUE, RESET, WHITE, stats.received, download);
+                println!("  {}  {}           {} {}", DIM, RESET, down_bar, RESET);
+                println!();
+                println!("{}{}─────────────────────────────────────────────────────────────{}", DIM, BOLD, RESET);
+                println!();
+                println!("  {}{}[s] Network Scan{}", YELLOW, BOLD, RESET);
+                println!();
+                println!();
+                render_matrix_grid(&current_matrix);
+                println!();
+                typewriter_print(&format!("  {}{}Scan Successful!{}", GREEN, BOLD, RESET), 30);
+                println!();
+                println!("  {}{}── Network Devices ─────────────────────────────────────{}", CYAN, BOLD, RESET);
+                if devs.is_empty() {
+                    println!("  {}No devices found.{}", RED, RESET);
+                } else {
+                    println!("  {}{}{:<16}  {:<20}  {}{}", DIM, BOLD, "IP ADDRESS", "HOSTNAME", "MAC ADDRESS", RESET);
+                    println!("  {}──────────────────────────────────────────────────────────{}", DIM, RESET);
+                    for dev in &devs {
+                        let mac_str = if dev.mac.is_empty() { "(this device)".into() }
+                                      else { dev.mac.as_str() };
+                        let host_color = match dev.hostname.as_str() {
+                            "Router" => CYAN,
+                            "Methnula" => MAGENTA,
+                            _ => WHITE,
+                        };
+                        println!("  {}{:<16}  {}{:<20}{}  {}{}{}",
+                            WHITE, dev.ip,
+                            host_color, dev.hostname, RESET,
+                            DIM, mac_str, RESET
+                        );
+                    }
+                }
+                println!("  {}──────────────────────────────────────────────────────────{}", DIM, RESET);
+                println!();
+                println!("{}  Press [s] to toggle scan  •  Press [q] to quit{}", DIM, RESET);
+                println!();
+                set_raw_mode(true);
+                typewriter_done = true;
+            } else if open && typewriter_done {
+                render(&stats, &upload, &download, &latency, open, &devs, false,
+                       tick, max_upload, max_download, stats.sent_bytes, stats.received_bytes,
+                       None, true);
+            } else {
+                render(&stats, &upload, &download, &latency, open, &devs, false,
+                       tick, max_upload, max_download, stats.sent_bytes, stats.received_bytes,
+                       None, false);
+            }
+
+            if !open || !scanning {
+                if !open {
+                    matrix_frame_count = 0;
+                    show_all_ones = false;
+                    typewriter_done = false;
+                }
+            }
         }
 
         prev_sent     = stats.sent_bytes;
@@ -472,7 +631,7 @@ fn main() {
         first         = false;
         tick          = tick.wrapping_add(1);
 
-        thread::sleep(Duration::from_millis(500));
+        thread::sleep(Duration::from_millis(50));
     }
 
     set_raw_mode(false);
