@@ -1,3 +1,6 @@
+mod config;
+mod web;
+
 use std::{
     io::{self, Read, Write},
     sync::{Arc, Mutex},
@@ -6,6 +9,10 @@ use std::{
 };
 use regex::Regex;
 use rand::Rng;
+use tokio::sync::RwLock;
+
+use config::Config;
+use web::{SharedStats, SharedDevices};
 
 const ROUTER_URL: &str = "http://192.168.4.1";
 const NETWORK:    &str = "192.168.4.0/24";
@@ -542,10 +549,38 @@ fn render(
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
-fn main() {
+#[tokio::main]
+async fn main() {
+    let config = Config::load();
+    println!("Web interface will be available at: http://{}:{}", config.web.host, config.web.port);
+    
     set_raw_mode(true);
     show_initializing_animation();
     set_raw_mode(true);
+
+    let shared_stats: SharedStats = Arc::new(RwLock::new(Stats {
+        status: "Loading...".into(),
+        clients: "0".into(),
+        rssi: "N/A".into(),
+        uptime: "N/A".into(),
+        sent: "N/A".into(),
+        received: "N/A".into(),
+        sent_bytes: 0.0,
+        received_bytes: 0.0,
+    }));
+    
+    let shared_devices: SharedDevices = Arc::new(RwLock::new(vec![]));
+
+    let web_stats = shared_stats.clone();
+    let web_devices = shared_devices.clone();
+    let web_config = config.clone();
+    
+    tokio::spawn(async move {
+        let routes = web::create_web_interface(web_config.clone(), web_stats, web_devices);
+        let addr: std::net::IpAddr = web_config.web.host.parse().expect("Invalid host address");
+        println!("{}{}Web server started on http://{}:{}{}", GREEN, BOLD, web_config.web.host, web_config.web.port, RESET);
+        warp::serve(routes).run((addr, web_config.web.port)).await;
+    });
 
     let scan_open: Arc<Mutex<bool>>        = Arc::new(Mutex::new(false));
     let scanning:  Arc<Mutex<bool>>        = Arc::new(Mutex::new(false));
@@ -627,10 +662,30 @@ fn main() {
         };
 
         {
+            let web_stats = shared_stats.clone();
+            let web_devices = shared_devices.clone();
+            let mut ws = web_stats.write().await;
+            *ws = Stats {
+                status: stats.status.clone(),
+                clients: stats.clients.clone(),
+                rssi: stats.rssi.clone(),
+                uptime: stats.uptime.clone(),
+                sent: stats.sent.clone(),
+                received: stats.received.clone(),
+                sent_bytes: stats.sent_bytes,
+                received_bytes: stats.received_bytes,
+            };
+            drop(ws);
+            
             let open     = *scan_open.lock().unwrap();
             let scanning = *scanning.lock().unwrap();
             let devs     = devices.lock().unwrap().clone();
             let complete = *scan_complete.lock().unwrap();
+            
+            {
+                let mut wd = web_devices.write().await;
+                *wd = devs.clone();
+            }
 
             if scanning && open {
                 if tick - last_matrix_tick >= 1 {

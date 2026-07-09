@@ -11,3 +11,8 @@ path = "src/main.rs"
 reqwest = { version = "0.12", features = ["blocking", "rustls-tls"], default-features = false }
 regex   = "1"
 rand    = "0.8"
+warp    = "0.3"
+tokio   = { version = "1", features = ["full"] }
+serde   = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+dirs    = "5"
