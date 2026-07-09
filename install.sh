@@ -70,6 +70,10 @@ fi
 echo "Installing the 'router' binary (this may take a few minutes)..."
 if cargo install --path router-agent; then
   echo ""
+  sudo cp router-agent.service /etc/systemd/system/router-agent.service
+  sudo systemctl daemon-reload
+  sudo systemctl enable router-agent.service
+  sudo systemctl start router-agent.service
   echo "Installation completed successfully."
   echo "Run 'router' to start the dashboard, or see README.md for the"
   echo "systemd service instructions."
