@@ -300,6 +300,26 @@ const INDEX_HTML: &str = r#"<!DOCTYPE html>
             border-top: 1px solid #00aa00;
         }
         
+        .github-link {
+            display: inline-block;
+            margin-top: 8px;
+            color: #00cc00;
+            text-decoration: none;
+            border: 1px solid #00cc00;
+            padding: 6px 16px;
+            font-size: 13px;
+            transition: all 0.2s ease;
+            background: transparent;
+        }
+        
+        .github-link:hover {
+            color: #00ff00;
+            background: rgba(0, 255, 0, 0.1);
+            border-color: #00ff00;
+            box-shadow: 0 0 14px rgba(0, 255, 0, 0.25), inset 0 0 8px rgba(0, 255, 0, 0.05);
+            text-shadow: 0 0 8px rgba(0, 255, 0, 0.5);
+        }
+        
         .ascii-art {
             color: #00ff00;
             font-size: 12px;
@@ -392,6 +412,7 @@ const INDEX_HTML: &str = r#"<!DOCTYPE html>
         
         <div class="footer">
             <p>Router Agent v0.1.0 | <span id="last-update">Last Update: --</span><span class="terminal-cursor"></span></p>
+            <a class="github-link" href="https://github.com/VihasMethnula/RouterAgent" target="_blank" rel="noopener noreferrer">[ GITHUB PAGE ]</a>
         </div>
     </div>
     
