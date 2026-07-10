@@ -261,6 +261,37 @@ const INDEX_HTML: &str = r#"<!DOCTYPE html>
             50% { opacity: 0; }
         }
         
+        .cursor-glow {
+            position: fixed;
+            width: 200px;
+            height: 200px;
+            pointer-events: none;
+            z-index: -1;
+            background: radial-gradient(circle, rgba(0, 255, 0, 0.12) 0%, rgba(0, 255, 100, 0.06) 40%, transparent 70%);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            will-change: transform;
+        }
+        
+        .cursor-glow::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 40px;
+            height: 40px;
+            transform: translate(-50%, -50%);
+            background: radial-gradient(circle, rgba(0, 255, 0, 0.25) 0%, transparent 70%);
+            border-radius: 50%;
+            filter: blur(8px);
+            animation: glow-pulse 3s ease-in-out infinite alternate;
+        }
+        
+        @keyframes glow-pulse {
+            0% { opacity: 0.7; transform: translate(-50%, -50%) scale(1); }
+            100% { opacity: 1; transform: translate(-50%, -50%) scale(1.3); }
+        }
+        
         .footer {
             text-align: center;
             color: #00aa00;
@@ -295,6 +326,7 @@ const INDEX_HTML: &str = r#"<!DOCTYPE html>
     </style>
 </head>
 <body>
+    <div class="cursor-glow" id="cursorGlow"></div>
     <div class="container">
         <div class="header">
             <div class="ascii-art">
@@ -426,6 +458,30 @@ const INDEX_HTML: &str = r#"<!DOCTYPE html>
             fetchDevices();
         }
         
+        // ── Floating cursor glow ────────────────────────────────────────────
+        const glow = document.getElementById('cursorGlow');
+        let mouseX = window.innerWidth / 2;
+        let mouseY = window.innerHeight / 2;
+        let currentX = mouseX;
+        let currentY = mouseY;
+        
+        document.addEventListener('mousemove', (e) => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+        });
+        
+        // Smooth interpolation for buttery-smooth tracking
+        function animateGlow() {
+            currentX += (mouseX - currentX) * 0.12;
+            currentY += (mouseY - currentY) * 0.12;
+            glow.style.left = currentX + 'px';
+            glow.style.top = currentY + 'px';
+            requestAnimationFrame(animateGlow);
+        }
+        
+        animateGlow();
+        
+        // ── Data refresh ────────────────────────────────────────────────────
         updateData();
         setInterval(updateData, 1000);
     </script>
